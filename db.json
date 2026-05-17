@@ -1,0 +1,184 @@
+{
+  "tasks": [
+    {
+      "id": "1",
+      "task_code": "T001",
+      "location": "桥梁A区",
+      "scheduled_time": "2026-05-10 10:00",
+      "status": "in_progress",
+      "crack_count": 2
+    },
+    {
+      "id": "2",
+      "task_code": "T002",
+      "location": "隧道B入口",
+      "scheduled_time": "2026-05-11 09:00",
+      "status": "in_progress",
+      "crack_count": 1
+    },
+    {
+      "id": "3",
+      "task_code": "T003",
+      "location": "厂房北侧",
+      "scheduled_time": "2026-05-12 14:00",
+      "status": "in_progress",
+      "crack_count": 0
+    }
+  ],
+  "images": [
+    {
+      "id": "1",
+      "task_id": 1,
+      "url": "/images/crack1.jpg",
+      "name": "桥梁裂纹照片1"
+    },
+    {
+      "id": "2",
+      "task_id": 1,
+      "url": "/images/crack2.jpg",
+      "name": "桥梁裂纹照片2"
+    },
+    {
+      "id": "3",
+      "task_id": 2,
+      "url": "/images/crack3.jpg",
+      "name": "隧道裂纹照片1"
+    }
+  ],
+  "detections": [
+    {
+      "id": "1",
+      "task_id": 1,
+      "image_id": 1,
+      "x": 120,
+      "y": 80,
+      "w": 100,
+      "h": 30,
+      "prob": 0.92
+    },
+    {
+      "id": "2",
+      "task_id": 1,
+      "image_id": 1,
+      "x": 300,
+      "y": 200,
+      "w": 80,
+      "h": 40,
+      "prob": 0.88
+    },
+    {
+      "id": "3",
+      "task_id": 1,
+      "image_id": 2,
+      "x": 200,
+      "y": 150,
+      "w": 120,
+      "h": 50,
+      "prob": 0.95
+    }
+  ],
+  "logs": [
+    {
+      "id": "1",
+      "task_id": null,
+      "time": "2026-05-10 10:01:23",
+      "operator": "system",
+      "event": "系统初始化完成"
+    },
+    {
+      "id": "2",
+      "task_id": 1,
+      "time": "2026-05-10 10:02:10",
+      "operator": "system",
+      "event": "检测完成，发现裂纹"
+    },
+    {
+      "id": "3",
+      "task_id": 2,
+      "time": "2026-05-11 09:05:00",
+      "operator": "inspector_01",
+      "event": "巡检员开始任务"
+    },
+    {
+      "task_id": "3",
+      "time": "5/15/2026, 4:03:47 PM",
+      "event": "管理员已指派任务，树莓派正在响应...",
+      "id": "cM45mrqH-Ps"
+    }
+  ],
+  "users": [
+    {
+      "id": "1",
+      "account": "admin",
+      "role": "admin",
+      "status": "正常"
+    },
+    {
+      "id": "2",
+      "account": "inspector_01",
+      "role": "user",
+      "status": "正常"
+    },
+    {
+      "id": "3",
+      "account": "5555",
+      "role": "user",
+      "status": "正常"
+    }
+  ],
+  "analysis_region": [
+    {
+      "id": "1",
+      "region": "桥梁A区",
+      "crack_count": 5
+    },
+    {
+      "id": "2",
+      "region": "隧道B入口",
+      "crack_count": 2
+    },
+    {
+      "id": "3",
+      "region": "厂房北侧",
+      "crack_count": 1
+    }
+  ],
+  "analysis_progress": [
+    {
+      "id": "1",
+      "date": "05-10",
+      "completed": 1
+    },
+    {
+      "id": "2",
+      "date": "05-11",
+      "completed": 2
+    },
+    {
+      "id": "3",
+      "date": "05-12",
+      "completed": 3
+    }
+  ],
+  "analysis_heatmap": [
+    {
+      "id": "1",
+      "x": 120,
+      "y": 200,
+      "value": 5
+    },
+    {
+      "id": "2",
+      "x": 300,
+      "y": 150,
+      "value": 3
+    },
+    {
+      "id": "3",
+      "x": 450,
+      "y": 250,
+      "value": 2
+    }
+  ],
+  "$schema": "./node_modules/json-server/schema.json"
+}
