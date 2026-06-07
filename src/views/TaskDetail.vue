@@ -1,88 +1,118 @@
 <template>
-  <div class="task-detail">
-    <!-- 页头 -->
-    <el-page-header @back="$router.back()" :content="'任务详情: ' + baseInfo.task_code" />
+  <div class="task-detail cyber-theme">
+    <el-page-header
+      @back="$router.back()"
+      :content="'TASK DOSSIER: ' + baseInfo.task_code"
+      class="cyber-header"
+    />
 
-    <!-- 1. 进度展示：使用 el-steps 增强直观感 -->
-    <el-card style="margin-top: 20px">
-      <el-steps :active="currentStep" finish-status="success" align-center>
+    <el-card class="cyber-card" style="margin-top: 20px">
+      <el-steps
+        :active="currentStep"
+        finish-status="success"
+        align-center
+        class="cyber-steps"
+      >
         <el-step title="任务分配"></el-step>
-        <el-step title="现场巡检"></el-step>
-        <el-step title="图片上传"></el-step>
-        <el-step title="模型检测"></el-step>
+        <el-step title="现场巡检 (抓拍/录像)"></el-step>
+        <el-step title="数据同步与归档"></el-step>
         <el-step title="任务完成"></el-step>
       </el-steps>
     </el-card>
 
-    <!-- 2. 基础信息展示：映射状态颜色与中文 -->
-    <el-card class="box-card" style="margin-top: 20px">
-      <el-descriptions title="巡检基本信息" border>
-        <el-descriptions-item label="任务编号">{{ baseInfo.task_code }}</el-descriptions-item>
-        <el-descriptions-item label="巡检位置">{{ baseInfo.location }}</el-descriptions-item>
+    <el-card class="cyber-card" style="margin-top: 20px">
+      <el-descriptions title="教学楼巡检基本信息" border class="cyber-desc">
+        <el-descriptions-item label="任务编号">{{
+          baseInfo.task_code
+        }}</el-descriptions-item>
+        <el-descriptions-item label="巡检位置">{{
+          baseInfo.location
+        }}</el-descriptions-item>
         <el-descriptions-item label="当前状态">
-          <!-- 使用 el-tag 映射状态枚举 -->
-          <el-tag :type="statusMap[baseInfo.status]?.tag || 'info'" effect="dark">
-            {{ statusMap[baseInfo.status]?.text || '未知' }}
+          <el-tag
+            :type="statusMap[baseInfo.status]?.tag || 'info'"
+            effect="dark"
+            class="cyber-tag"
+          >
+            {{ statusMap[baseInfo.status]?.text || "未知" }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="更新时间">{{ lastLogTime }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{
+          lastLogTime
+        }}</el-descriptions-item>
       </el-descriptions>
     </el-card>
 
-    <!-- 3. 照片与检测结果：联动显示裂纹概率 -->
+    <el-card class="cyber-card" style="margin-top: 20px">
+      <template #header>
+        <span>📸 现场抓拍证据链 (点击图片可放大)</span>
+      </template>
+      <div v-if="snapshots.length > 0" class="gallery-grid">
+        <div
+          v-for="(img, index) in snapshots"
+          :key="img.id"
+          class="snapshot-card"
+        >
+          <el-image
+            :src="img.image"
+            :preview-src-list="snapshots.map((s) => s.image)"
+            :initial-index="index"
+            fit="cover"
+            class="gallery-img"
+          />
+          <div class="snapshot-meta">
+            <div><i class="el-icon-time"></i> {{ img.time }}</div>
+            <div>雷达探距: {{ img.distance }}cm | 车速: {{ img.speed }}%</div>
+          </div>
+        </div>
+      </div>
+      <el-empty v-else description="暂无现场抓拍图片" />
+    </el-card>
+
     <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :span="16">
-        <el-card header="检测结果可视化">
-          <div v-if="images.length > 0" class="image-viewer-container">
-            <div style="position: relative; display: inline-block;">
-              <el-image 
-                :src="currentViewImage.url" 
-                fit="contain" 
-                class="main-inspection-img" 
-              />
-              <!-- 动态绘制 bbox 并叠加置信度标签 -->
-              <div 
-                v-for="box in getBboxes(currentViewImage.id)" 
-                :key="box.id"
-                class="detection-bbox"
-                :style="{ left: box.x+'px', top: box.y+'px', width: box.w+'px', height: box.h+'px' }"
-              >
-                <span class="confidence-label">{{ (box.prob * 100).toFixed(1) }}%</span>
+      <el-col :span="12">
+        <el-card class="cyber-card">
+          <template #header><span>📹 巡检录像档案</span></template>
+          <div v-if="videos.length > 0" class="video-list">
+            <div v-for="vid in videos" :key="vid.id" class="video-card">
+              <div class="video-icon">▶</div>
+              <div class="video-info">
+                <div class="v-title">现场巡检录像片段</div>
+                <div class="v-desc">
+                  时长: {{ vid.duration }} | 录制于: {{ vid.time }}
+                </div>
               </div>
+              <el-button size="small" type="primary" plain @click="playVideo"
+                >调取查看</el-button
+              >
             </div>
           </div>
-          <el-empty v-else description="暂无巡检照片" />
+          <el-empty v-else description="暂无录像记录" />
         </el-card>
       </el-col>
 
-      <!-- 右侧：缩略图列表与日志 -->
-      <el-col :span="8">
-        <el-card header="照片列表" style="margin-bottom: 20px">
-          <el-scrollbar height="200px">
-            <div 
-              v-for="img in images" 
-              :key="img.id" 
-              class="thumb-item" 
-              @click="currentViewImage = img"
-              :class="{active: currentViewImage.id === img.id}"
-            >
-              <el-image :src="img.url" fit="cover" style="width: 80px; height: 60px" />
-              <span style="margin-left: 10px; font-size: 12px;">{{ img.name }}</span>
-            </div>
-          </el-scrollbar>
-        </el-card>
-
-        <el-card header="执行日志">
-          <el-timeline>
-            <el-timeline-item 
-              v-for="log in logs" 
-              :key="log.id" 
+      <el-col :span="12">
+        <el-card class="cyber-card">
+          <template #header><span>⚠️ 缺陷标记与流转日志</span></template>
+          <el-timeline v-if="logs.length > 0">
+            <el-timeline-item
+              v-for="log in logs"
+              :key="log.id"
               :timestamp="log.time"
               :type="log.type"
+              color="#00e5ff"
             >
-              {{ log.event }}
+              <span
+                :style="{
+                  color: log.type === 'danger' ? '#ef4444' : '#e2e8f0',
+                  fontWeight: log.type === 'danger' ? 'bold' : 'normal',
+                }"
+              >
+                {{ log.event }}
+              </span>
             </el-timeline-item>
           </el-timeline>
+          <el-empty v-else description="暂无流转日志" />
         </el-card>
       </el-col>
     </el-row>
@@ -90,103 +120,198 @@
 </template>
 
 <script>
-import { SERVER } from './config.js';
-import { ElMessage } from 'element-plus'; // 引入消息组件 [4, 5]
+import { ElMessage } from "element-plus";
 
 export default {
   data() {
     return {
-      baseInfo: { status: 'pending' },
+      baseInfo: {
+        status: "in_progress",
+        task_code: "TSK-001",
+        location: "教学楼A区外墙",
+      },
       logs: [],
-      images: [],
-      detections: [],
-      currentViewImage: {},
-      // 状态映射表 [6]
+      snapshots: [],
+      videos: [],
       statusMap: {
-        pending: { text: '待分配', tag: 'info', step: 0 },
-        in_progress: { text: '巡检中', tag: 'warning', step: 2 },
-        done: { text: '已完成', tag: 'success', step: 5 }
-      }
-    }
+        pending: { text: "待分配", tag: "info", step: 0 },
+        in_progress: { text: "巡检中", tag: "warning", step: 1 },
+        done: { text: "已完成", tag: "success", step: 4 },
+      },
+    };
   },
   computed: {
-    // 动态计算当前步骤条索引 [7]
     currentStep() {
       return this.statusMap[this.baseInfo.status]?.step || 0;
     },
     lastLogTime() {
-      return this.logs.length > 0 ? this.logs[this.logs.length - 1].time : '---';
-    }
+      return this.logs.length > 0
+        ? this.logs[0].time
+        : new Date().toLocaleString();
+    },
   },
   mounted() {
-    this.initData(this.$route.params.id);
+    const id = this.$route.params.id || "TSK-001";
+    this.baseInfo.task_code = id;
+    this.initData(id);
   },
   methods: {
-    // 3. 增强的错误处理机制 [3]
-    async initData(id) {
-      try {
-        // 聚合请求
-        const [taskRes, logRes, imgRes, detRes] = await Promise.all([
-          fetch(`${SERVER}/tasks/${id}`),
-          fetch(`${SERVER}/logs?task_id=${id}`),
-          fetch(`${SERVER}/images?task_id=${id}`),
-          fetch(`${SERVER}/detections?task_id=${id}`)
-        ]);
+    initData(id) {
+      // 直接读取本地 PiControl 产生的数据闭环，不再请求 localhost:3000
+      const localRecords = JSON.parse(
+        localStorage.getItem(`task_records_${id}`) || "[]",
+      );
 
-        if (!taskRes.ok) throw new Error("服务器未响应");
+      // 分类数据：图片、视频、人工标记
+      this.snapshots = localRecords.filter((r) => r.type === "snapshot");
+      this.videos = localRecords.filter((r) => r.type === "video");
 
-        this.baseInfo = await taskRes.json();
-        this.logs = await logRes.json();
-        this.images = await imgRes.json();
-        this.detections = await detRes.json();
+      // 构建日志时间轴
+      const defectLogs = localRecords
+        .filter((r) => r.type === "defect_tag")
+        .map((r) => ({
+          id: r.id,
+          time: r.time,
+          type: "danger",
+          event: `🚨 人工上报缺陷: ${r.defectType} (严重级别: ${r.severity}星) - ${r.desc || "无描述"}`,
+        }));
+      const videoLogs = this.videos.map((r) => ({
+        id: r.id,
+        time: r.time,
+        type: "primary",
+        event: `📹 完成现场录像录制 (时长: ${r.duration})`,
+      }));
 
-        if (this.images.length > 0) this.currentViewImage = this.images[0];
-        
-      } catch (error) {
-        // 调用 Element Plus 错误提示 [3, 8]
-        ElMessage.error("任务详情加载失败，请检查网络或后端配置");
-      }
+      this.logs = [...defectLogs, ...videoLogs].sort(
+        (a, b) => new Date(b.time) - new Date(a.time),
+      );
+
+      // 动态更新任务位置信息
+      const allTasks = JSON.parse(localStorage.getItem("system_tasks") || "[]");
+      const currentTask = allTasks.find((t) => t.id === id);
+      if (currentTask) this.baseInfo.location = currentTask.location;
     },
-    getBboxes(imageId) {
-      return this.detections.filter(d => d.image_id === imageId);
-    }
-  }
-}
+    playVideo() {
+      ElMessage.success("视频源受保护，演示环境仅作存证展示。");
+    },
+  },
+};
 </script>
 
 <style scoped>
-/* BBox 样式增强 */
-.detection-bbox {
-  position: absolute;
-  border: 2px solid #F56C6C; /* 使用警告色 [6] */
-  background: rgba(245, 108, 108, 0.15);
-  pointer-events: none;
+.cyber-theme {
+  padding: 20px;
+  background-color: #050810;
+  min-height: 100vh;
+  color: #e2e8f0;
 }
-/* 概率标签：显示在框的左上角 */
-.confidence-label {
-  position: absolute;
-  top: -20px;
-  left: -2px;
-  background: #F56C6C;
-  color: white;
-  padding: 0 4px;
+:deep(.el-page-header__content) {
+  color: #00e5ff;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+:deep(.cyber-card) {
+  background: #0b1320;
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  color: #e2e8f0;
+}
+:deep(.cyber-card .el-card__header) {
+  border-bottom: 1px solid rgba(0, 229, 255, 0.2);
+  color: #00e5ff;
+  font-weight: bold;
+}
+:deep(.el-step__title.is-success),
+:deep(.el-step__head.is-success) {
+  color: #00e5ff;
+  border-color: #00e5ff;
+}
+:deep(.el-descriptions__body) {
+  background: transparent;
+}
+:deep(.el-descriptions__label) {
+  background: #070b14 !important;
+  color: #00e5ff !important;
+  border-color: rgba(0, 229, 255, 0.1) !important;
+}
+:deep(.el-descriptions__content) {
+  color: #e2e8f0 !important;
+  border-color: rgba(0, 229, 255, 0.1) !important;
+  background: #0b1320 !important;
+}
+
+/* 画廊布局 */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 16px;
+}
+.snapshot-card {
+  background: #050810;
+  border: 1px solid rgba(0, 229, 255, 0.15);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: transform 0.2s;
+}
+.snapshot-card:hover {
+  transform: translateY(-3px);
+  border-color: #00e5ff;
+  box-shadow: 0 5px 15px rgba(0, 229, 255, 0.1);
+}
+.gallery-img {
+  width: 100%;
+  height: 180px;
+  display: block;
+  cursor: pointer;
+}
+.snapshot-meta {
+  padding: 10px;
   font-size: 11px;
-  border-radius: 2px;
+  color: #94a3b8;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: monospace;
+  border-top: 1px solid rgba(0, 229, 255, 0.1);
 }
-.thumb-item {
+
+/* 录像列表布局 */
+.video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.video-card {
   display: flex;
   align-items: center;
-  padding: 5px;
-  cursor: pointer;
-  border: 1px solid transparent;
+  background: rgba(0, 229, 255, 0.05);
+  border: 1px solid rgba(0, 229, 255, 0.2);
+  padding: 12px;
+  border-radius: 6px;
 }
-.thumb-item.active {
-  border-color: #409EFF;
-  background: #ecf5ff;
+.video-icon {
+  width: 40px;
+  height: 40px;
+  background: #00e5ff;
+  color: #050810;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  margin-right: 15px;
 }
-.main-inspection-img {
-  width: 100%;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1); /* 卡片式阴影 [9] */
+.video-info {
+  flex: 1;
+}
+.v-title {
+  font-weight: bold;
+  color: #e2e8f0;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.v-desc {
+  color: #64748b;
+  font-size: 12px;
+  font-family: monospace;
 }
 </style>

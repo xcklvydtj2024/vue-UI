@@ -1,213 +1,241 @@
 <template>
-  <div class="task-manager">
-    <!-- 顶部操作栏 -->
-    <div class="header-actions" style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-      <div>
-        <el-button type="primary" icon="el-icon-plus" @click="openCreate">新建巡检任务</el-button>
-        <el-button icon="el-icon-refresh" @click="fetchTasks(true)">手动刷新</el-button>
-      </div>
-      <el-tag type="info">系统状态：{{ isPolling ? '实时同步中' : '自动刷新已停止' }}</el-tag>
+  <div class="page-container cyber-theme">
+    <div class="header-actions">
+      <el-button
+        type="primary"
+        color="#00e5ff"
+        style="color: #050810; font-weight: bold"
+        @click="showCreateDialog = true"
+      >
+        <i class="el-icon-plus"></i> 新建巡检任务
+      </el-button>
+      <el-input
+        v-model="searchKey"
+        placeholder="搜索任务编号或位置..."
+        class="cyber-input"
+        style="width: 250px"
+      />
     </div>
 
-    <!-- 任务表格：增加 v-loading 提升加载体验 [1] -->
-    <el-table :data="tasks" border v-loading="loading" style="width: 100%">
-      <el-table-column prop="task_code" label="任务编号" width="140" />
-      <el-table-column prop="location" label="巡检位置" />
-      <el-table-column prop="scheduled_time" label="计划时间" width="180" />
-      
-      <el-table-column label="状态" width="120">
+    <el-table :data="filteredTasks" border height="600" class="cyber-table">
+      <el-table-column prop="id" label="任务编号" width="180">
         <template #default="scope">
-          <el-tag :type="statusMap[scope.row.status].tag" effect="dark">
-            {{ statusMap[scope.row.status].text }}
+          <span
+            class="text-accent"
+            style="font-family: monospace; font-weight: bold"
+            >{{ scope.row.id }}</span
+          >
+        </template>
+      </el-table-column>
+      <el-table-column prop="location" label="巡检目标位置" />
+      <el-table-column prop="creator" label="下发人" width="120" />
+      <el-table-column prop="createTime" label="创建时间" width="180" />
+      <el-table-column prop="status" label="任务状态" width="120">
+        <template #default="scope">
+          <el-tag
+            :type="scope.row.status === 'pending' ? 'info' : 'success'"
+            color="#0B1320"
+            style="border-color: #00e5ff"
+          >
+            {{ scope.row.status === "pending" ? "待下发执行" : "执行中" }}
           </el-tag>
         </template>
       </el-table-column>
-
-      <el-table-column label="管理操作" width="280">
+      <el-table-column label="控制台" width="150" align="center">
         <template #default="scope">
-          <!-- 分配逻辑 -->
-          <el-button 
-            size="mini" 
-            type="success" 
-            :disabled="scope.row.status !== 'pending'"
-            @click="handleAllocate(scope.row)"
-          >分配</el-button>
-
-          <el-button size="mini" @click="goDetails(scope.row.id)">结果</el-button>
-          <el-button size="mini" type="info" @click="openEdit(scope.row)">编辑</el-button>
-
-          <!-- 气泡确认删除 [2, 3] -->
-          <el-popconfirm title="确定彻底删除此任务吗？" @confirm="handleDelete(scope.row.id)">
-            <template #reference>
-              <el-button size="mini" type="danger" style="margin-left: 10px">删除</el-button>
-            </template>
-          </el-popconfirm>
+          <el-button
+            size="small"
+            type="primary"
+            plain
+            @click="goToDetail(scope.row.id)"
+            >查看档案</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
 
-    <!-- 任务表单弹窗 [4, 5] -->
-    <el-dialog :title="isEdit ? '编辑任务' : '新建任务'" v-model="dialogVisible" width="500px">
-      <el-form :model="taskForm" :rules="formRules" ref="taskFormRef" label-width="100px">
-        <el-form-item label="任务编号" prop="task_code">
-          <el-input v-model="taskForm.task_code" :disabled="isEdit" placeholder="T+日期+序号" />
+    <el-dialog
+      v-model="showCreateDialog"
+      title="📝 下达新巡检指令"
+      width="500px"
+      custom-class="cyber-dialog"
+      append-to-body
+    >
+      <el-form :model="newTask" label-width="90px">
+        <el-form-item label="巡检位置">
+          <el-input
+            v-model="newTask.location"
+            placeholder="例如：跨海大桥南侧底座A区"
+          ></el-input>
         </el-form-item>
-        <el-form-item label="巡检位置" prop="location">
-          <el-input v-model="taskForm.location" />
+        <el-form-item label="负责人">
+          <el-input
+            v-model="newTask.creator"
+            placeholder="输入操作员姓名"
+            disabled
+          ></el-input>
         </el-form-item>
-        <el-form-item label="计划时间" prop="scheduled_time">
-          <el-date-picker 
-            v-model="taskForm.scheduled_time" 
-            type="datetime" 
-            value-format="YYYY-MM-DD HH:mm:ss"
-            style="width: 100%" 
-          />
+        <el-form-item label="任务备注">
+          <el-input
+            type="textarea"
+            v-model="newTask.desc"
+            placeholder="输入本次巡检的重点目标..."
+          ></el-input>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitTask" :loading="submitLoading">提交保存</el-button>
+        <el-button @click="showCreateDialog = false" plain>取 消</el-button>
+        <el-button
+          type="primary"
+          @click="createTask"
+          color="#00e5ff"
+          style="color: #050810; font-weight: bold"
+        >
+          立 即 建 立
+        </el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
-<script>
-import { SERVER } from './config.js';
-import { ElMessage, ElNotification } from 'element-plus'; [6, 7]
+<script setup>
+import { ref, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
 
-export default {
-  data() {
-    return {
-      tasks: [],
-      loading: false,
-      submitLoading: false,
-      dialogVisible: false,
-      isEdit: false,
-      isPolling: true,
-      refreshTimer: null, // 轮询定时器
-      taskForm: { task_code: '', location: '', scheduled_time: '', status: 'pending' },
-      statusMap: {
-        pending: { text: '待分配', tag: 'info' },
-        in_progress: { text: '巡检中', tag: 'warning' },
-        done: { text: '已完成', tag: 'success' }
+const router = useRouter();
+const searchKey = ref("");
+const tasks = ref([]);
+const showCreateDialog = ref(false);
+
+const newTask = ref({
+  location: "",
+  creator: "Admin_Pilot", // 默认当前账号
+  desc: "",
+});
+
+// 1. 初始化时读取本地任务库
+onMounted(() => {
+  const localTasks = JSON.parse(localStorage.getItem("system_tasks") || "[]");
+  if (localTasks.length === 0) {
+    // 塞入几个默认数据兜底
+    localTasks.push(
+      {
+        id: "TSK-2026001",
+        location: "跨海大桥底座巡检",
+        creator: "System",
+        createTime: new Date().toLocaleString(),
+        status: "pending",
       },
-      formRules: { // 表单验证 [8, 9]
-        task_code: [{ required: true, message: '请输入编号', trigger: 'blur' }],
-        location: [{ required: true, message: '请填写位置', trigger: 'blur' }]
-      }
-    }
-  },
-  mounted() {
-    this.fetchTasks();
-    this.startPolling(); // 组件挂载时启动自动刷新
-  },
-  beforeUnmount() {
-    this.stopPolling(); // 组件销毁前必须清除定时器 [10]
-  },
-  methods: {
-    // 1. 强化的错误处理：获取列表 [11]
-    async fetchTasks(isManual = false) {
-      if (isManual) this.loading = true;
-      try {
-        const res = await fetch(`${SERVER}/tasks`);
-        if (!res.ok) throw new Error("获取任务列表失败");
-        this.tasks = await res.json();
-        if (isManual) ElMessage.success("数据同步成功");
-      } catch (error) {
-        ElNotification.error({ title: '网络错误', message: error.message });
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    // 2. 自动刷新机制 (轮询)
-    startPolling() {
-      this.refreshTimer = setInterval(() => {
-        this.fetchTasks();
-      }, 5000); // 每 5 秒自动同步一次状态
-    },
-    stopPolling() {
-      if (this.refreshTimer) clearInterval(this.refreshTimer);
-      this.isPolling = false;
-    },
-
-    // 3. 完整的 CRUD：提交新建或修改 [12, 13]
-    async submitTask() {
-      this.$refs.taskFormRef.validate(async (valid) => {
-        if (!valid) return;
-        this.submitLoading = true;
-        try {
-          const method = this.isEdit ? 'PUT' : 'POST';
-          const url = this.isEdit ? `${SERVER}/tasks/${this.taskForm.id}` : `${SERVER}/tasks`;
-          
-          await fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(this.taskForm)
-          });
-
-          ElMessage.success(this.isEdit ? "更新成功" : "创建成功");
-          this.dialogVisible = false;
-          this.fetchTasks();
-        } catch (e) {
-          ElMessage.error("提交失败，请检查后端服务");
-        } finally {
-          this.submitLoading = false;
-        }
-      });
-    },
-
-    // 4. 分配逻辑增强：状态变更 + 日志上报
-    async handleAllocate(row) {
-      try {
-        // 更新任务状态
-        await fetch(`${SERVER}/tasks/${row.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: 'in_progress' })
-        });
-
-        // 记录日志供详情页 [TaskDetail] 使用
-        await fetch(`${SERVER}/logs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            task_id: row.id,
-            time: new Date().toLocaleString(),
-            event: "管理员已指派任务，树莓派正在响应..."
-          })
-        });
-
-        ElMessage({ message: "任务已成功下发", type: 'success' });
-        this.fetchTasks();
-      } catch (e) {
-        ElMessage.error("分配请求超时");
-      }
-    },
-
-    async handleDelete(id) {
-      try {
-        await fetch(`${SERVER}/tasks/${id}`, { method: 'DELETE' });
-        ElMessage.warning("任务已从系统移除");
-        this.fetchTasks();
-      } catch (e) { ElMessage.error("删除失败"); }
-    },
-
-    // 辅助：打开对话框
-    openCreate() {
-      this.isEdit = false;
-      this.taskForm = { task_code: '', location: '', scheduled_time: '', status: 'pending' };
-      this.dialogVisible = true;
-    },
-    openEdit(row) {
-      this.isEdit = true;
-      this.taskForm = { ...row }; // 浅拷贝避免实时影响表格 [14]
-      this.dialogVisible = true;
-    },
-    goDetails(id) {
-      this.$router.push({ name: 'TaskDetail', params: { id } });
-    }
+      {
+        id: "TSK-2026002",
+        location: "隧道A区渗水排查",
+        creator: "System",
+        createTime: new Date().toLocaleString(),
+        status: "pending",
+      },
+    );
+    localStorage.setItem("system_tasks", JSON.stringify(localTasks));
   }
-}
+  tasks.value = localTasks;
+});
+
+// 2. 搜索过滤
+const filteredTasks = computed(() => {
+  return tasks.value.filter(
+    (t) =>
+      t.id.includes(searchKey.value) || t.location.includes(searchKey.value),
+  );
+});
+
+// 3. 核心：建立新任务
+const createTask = () => {
+  if (!newTask.value.location) {
+    ElMessage.warning("巡检位置不能为空！");
+    return;
+  }
+
+  // 生成任务流水号
+  const taskId = "TSK-" + Date.now().toString().slice(-6);
+  const taskObj = {
+    id: taskId,
+    location: newTask.value.location,
+    creator: newTask.value.creator,
+    desc: newTask.value.desc,
+    createTime: new Date().toLocaleString(),
+    status: "pending",
+  };
+
+  tasks.value.unshift(taskObj); // 放到最前面
+  localStorage.setItem("system_tasks", JSON.stringify(tasks.value)); // 存入数据库
+
+  ElMessage.success(`任务 ${taskId} 建立成功！请前往小车控制台下发执行。`);
+  showCreateDialog.value = false;
+  newTask.value.location = "";
+  newTask.value.desc = "";
+};
+
+// 4. 跳转详情页
+const goToDetail = (id) => {
+  router.push(`/admin-dashboard/task/${id}`);
+};
 </script>
+
+<style scoped>
+.cyber-theme {
+  padding: 20px;
+  background-color: #050810;
+  min-height: 100vh;
+}
+.header-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+/* 表格赛博朋克化 */
+.cyber-table {
+  --el-table-border-color: rgba(0, 229, 255, 0.1);
+  background-color: transparent;
+}
+:deep(.el-table),
+:deep(.el-table tr),
+:deep(.el-table th.el-table__cell) {
+  background-color: #0b1320 !important;
+  color: #e2e8f0;
+  border-color: rgba(0, 229, 255, 0.1) !important;
+}
+:deep(.el-table--border .el-table__cell) {
+  border-right-color: rgba(0, 229, 255, 0.1) !important;
+}
+:deep(.el-table td.el-table__cell) {
+  border-bottom-color: rgba(0, 229, 255, 0.1) !important;
+}
+:deep(.el-table tbody tr:hover > td) {
+  background-color: rgba(0, 229, 255, 0.05) !important;
+}
+.text-accent {
+  color: #00e5ff;
+}
+
+/* 弹窗定制 */
+:deep(.cyber-dialog) {
+  background: #0b1320 !important;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  box-shadow: 0 0 30px rgba(0, 229, 255, 0.1);
+}
+:deep(.el-dialog__title) {
+  color: #00e5ff;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+:deep(.el-form-item__label) {
+  color: #94a3b8;
+}
+:deep(.el-input__wrapper),
+:deep(.el-textarea__inner) {
+  background-color: #050810;
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.2) inset;
+  color: #e2e8f0;
+}
+</style>
