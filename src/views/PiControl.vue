@@ -59,7 +59,7 @@
       </div>
     </header>
 
-    <div class="hud-master-screen" :class="{ 'offline-blur': !isConnected }">
+    <div class="hud-master-screen" ref="masterScreenRef" :class="{ 'offline-blur': !isConnected }">
       <img
         v-if="isConnected"
         ref="videoStreamRef"
@@ -79,8 +79,12 @@
       </div>
 
       <div class="hud-action-floating-box" v-if="isConnected">
-        <button class="hud-action-btn btn-capture" @click="handleCapture">
-          📸 一键抓拍
+        <button class="hud-action-btn" style="color: #4ade80; border-color: #4ade80; cursor: default;">
+        <span class="rec-dot" style="display:inline-block; margin-right:5px; animation: boxPulse 1s infinite alternate;"></span>
+        🤖 自动巡航侦测中...
+        </button>
+        <button class="hud-action-btn" @click="handleFullscreen" title="全屏显示监控画面">
+        🖥️ 全屏预览
         </button>
         <button
           class="hud-action-btn btn-record"
@@ -123,8 +127,8 @@
           </defs>
         </svg>
         <div class="digital-speed">
-          <span class="num">{{ telemetry.speed }}</span>
-          <span class="unit">KM/H</span>
+          <span class="num">{{ Math.round(telemetry.speed) }}</span>
+          <span class="unit">PWM % (功率)</span>
         </div>
       </div>
 
@@ -218,42 +222,26 @@
       </div>
 
       <div class="panel-box">
-        <div class="panel-title">📸 摄像头云台方向（点击点动）</div>
-        <div class="control-matrix ptz-matrix">
-          <button
-            :disabled="!isConnected"
-            @click="handlePTZ('cam_up')"
-            class="matrix-btn up"
-          >
-            抬头
-          </button>
-          <div class="matrix-row">
-            <button
-              :disabled="!isConnected"
-              @click="handlePTZ('cam_left')"
-              class="matrix-btn left"
-            >
-              左看
-            </button>
-            <div class="ptz-center-node">云台</div>
-            <button
-              :disabled="!isConnected"
-              @click="handlePTZ('cam_right')"
-              class="matrix-btn right"
-            >
-              右看
-            </button>
+        <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <span>📸 舵机云台 (绝对角度)</span>
+          <el-button size="small" type="primary" plain @click="calibratePTZ" :disabled="!isConnected">
+            归中校准
+          </el-button>
+        </div>
+        
+        <div class="ptz-sliders" style="padding: 0 10px;">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom: 8px;">
+            <span style="color:#94a3b8; font-size:11px; width:45px;">水平(X)</span>
+            <el-slider v-model="ptzPan" :min="0" :max="180" :step="1" style="flex:1;" :disabled="!isConnected" @change="updatePTZ" />
+            <span style="color:#00e5ff; font-size:12px; width:35px; text-align:right;">{{ptzPan}}°</span>
           </div>
-          <button
-            :disabled="!isConnected"
-            @click="handlePTZ('cam_down')"
-            class="matrix-btn down"
-          >
-            低头
-          </button>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span style="color:#94a3b8; font-size:11px; width:45px;">垂直(Y)</span>
+            <el-slider v-model="ptzTilt" :min="0" :max="180" :step="1" style="flex:1;" :disabled="!isConnected" @change="updatePTZ" />
+            <span style="color:#00e5ff; font-size:12px; width:35px; text-align:right;">{{ptzTilt}}°</span>
+          </div>
         </div>
       </div>
-
       <div class="panel-box terminal-panel">
         <div class="panel-title">📋 WEBSOCKET 实时报文流通信日志</div>
         <div class="terminal-body" ref="logContainer">
@@ -291,7 +279,7 @@
       </div>
 
       <div class="footer-item slider-item">
-        <span class="footer-label">行驶最高限速</span>
+        <span class="footer-label">行驶输出功率 (PWM %)</span>
         <div class="slider-wrapper">
           <el-slider
             v-model="maxSpeed"
@@ -311,6 +299,7 @@
           active-color="#4ade80"
           inactive-color="#334155"
           :disabled="!isConnected"
+          @change="watchAiStatus"
         />
       </div>
     </div>
@@ -451,9 +440,42 @@
 <script setup>
 import { ref, reactive, nextTick, onMounted, onUnmounted } from "vue";
 import { ElMessage } from "element-plus";
+// ==========================================
+// ⌨️ WASD 键盘监听与防抖逻辑
+// ==========================================
+// 记录按键状态，防止长按时触发疯狂连续请求
+const activeKeys = reactive({ w: false, a: false, s: false, d: false });
 
+const handleKeyDown = (e) => {
+  if (!isConnected.value) return;
+  // 忽略在输入框里的按键
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return; 
+  
+  const key = e.key.toLowerCase();
+  if (key === 'w' && !activeKeys.w) { activeKeys.w = true; handlePress('forward'); }
+  if (key === 's' && !activeKeys.s) { activeKeys.s = true; handlePress('backward'); }
+  if (key === 'a' && !activeKeys.a) { activeKeys.a = true; handlePress('left'); }
+  if (key === 'd' && !activeKeys.d) { activeKeys.d = true; handlePress('right'); }
+};
+
+const handleKeyUp = (e) => {
+  if (!isConnected.value) return;
+  const key = e.key.toLowerCase();
+  
+  if (['w', 'a', 's', 'd'].includes(key)) {
+    activeKeys[key] = false;
+    // 只有当所有方向键都松开时，才发送停车指令
+    if (!activeKeys.w && !activeKeys.a && !activeKeys.s && !activeKeys.d) {
+      handleRelease();
+    }
+  }
+};
 // 📡 绑定 FastAPI 真实视频流地址
-const BASE_URL = "http://127.0.0.1:8000";
+// 📡 绑定 FastAPI 真实视频流地址 (替换为树莓派的真实IP)
+// ⚠️ 注意：每次树莓派重新连 WiFi，这个 IP 可能会变，请确保这里填的是最新的！
+// 📡 绑定 FastAPI 真实视频流地址
+// 网页前端只跟 Windows 本机的 AI 大脑对话！
+const BASE_URL = "http://127.0.0.1:8000"; 
 const videoStreamUrl = ref(`${BASE_URL}/inspection/stream.mjpg`);
 
 const isConnected = ref(true);
@@ -485,7 +507,21 @@ const pingDelay = ref(15);
 const packetLoss = ref(0);
 let heartbeatTimer = null;
 let telemetryTimer = null;
+// 🖥️ 触发全屏 API 逻辑
+const masterScreenRef = ref(null); // 👈 绑定上方加的 ref
 
+const handleFullscreen = () => {
+  const elem = masterScreenRef.value;
+  if (elem) {
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen();
+    } else if (elem.webkitRequestFullscreen) { /* Safari/Chrome */
+      elem.webkitRequestFullscreen();
+    } else if (elem.msRequestFullscreen) { /* IE11 */
+      elem.msRequestFullscreen();
+    }
+  }
+};
 const telemetry = reactive({
   speed: 0,
   voltage: 11.8,
@@ -496,19 +532,30 @@ const telemetry = reactive({
 const logs = ref([]);
 const logContainer = ref(null);
 
-onMounted(() => {
-  telemetryTimer = setInterval(fetchCarState, 1500);
-  const savedTasks = JSON.parse(localStorage.getItem("system_tasks") || "[]");
+onMounted(() => { 
+  telemetryTimer = setInterval(fetchCarState, 1500); 
+  const savedTasks = JSON.parse(localStorage.getItem('system_tasks') || '[]');
   availableTasks.value = savedTasks;
+  
+  window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('keyup', handleKeyUp);
+
+  // 🌟 新增：页面加载时，自动唤醒后端的普通视频流！
+  watchAiStatus(false);
 });
 
 const handleTaskDispatch = (val) => {
   if (val) {
     ElMessage.success(`任务 ${val} 已成功下发至小车控制总线！`);
-    printLog(
-      `[系统总线] 任务上下文已切换至 ${val}，巡检数据将同步至任务详情`,
-      "recv",
-    );
+    printLog(`[系统总线] 任务上下文已切换至 ${val}，巡检数据将同步至任务详情`, "recv");
+    
+    // 🌟 核心状态流转：将选中的任务状态改为“执行中 (in_progress)”
+    const allTasks = JSON.parse(localStorage.getItem('system_tasks') || '[]');
+    const taskIndex = allTasks.findIndex(t => t.id === val);
+    if (taskIndex !== -1) {
+      allTasks[taskIndex].status = 'in_progress';
+      localStorage.setItem('system_tasks', JSON.stringify(allTasks));
+    }
   }
 };
 
@@ -538,25 +585,40 @@ const apiRequest = async (endpoint, method = "GET", payload = null) => {
     if (payload) {
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(payload);
-      printLog(`[HTTP POST] ${endpoint} -> ${JSON.stringify(payload)}`, "send");
-    } else {
-      printLog(`[HTTP ${method}] ${endpoint}`, "send");
     }
+    
+    // 统一发送给本机的 app.py
+    const requestUrl = `${BASE_URL}${endpoint}`;
+
     const startTime = Date.now();
-    const response = await fetch(`${BASE_URL}${endpoint}`, options);
+    const response = await fetch(requestUrl, options);
     pingDelay.value = Date.now() - startTime;
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || "请求失败");
     return data;
+// ... 后续代码不变
   } catch (err) {
     printLog(`[ERROR] ${err.message}`, "red");
     throw err;
   }
 };
 
+// 💡 视觉平滑过渡逻辑 (模拟电机真实起步缓和与刹车)
+let speedInterval = null;
+
 const handlePress = async (direction) => {
   const dirMap = { forward: "F", backward: "B", left: "L", right: "R" };
-  telemetry.speed = maxSpeed.value;
+  
+  // 视觉上的逐渐加速效果 (每 50ms 增加 5%)
+  clearInterval(speedInterval);
+  speedInterval = setInterval(() => {
+    if (telemetry.speed < maxSpeed.value) telemetry.speed += 5;
+    if (telemetry.speed >= maxSpeed.value) { 
+      telemetry.speed = maxSpeed.value; 
+      clearInterval(speedInterval); 
+    }
+  }, 50);
+
   try {
     await apiRequest("/control/move", "POST", {
       direction: dirMap[direction],
@@ -566,24 +628,53 @@ const handlePress = async (direction) => {
 };
 
 const handleRelease = async () => {
-  telemetry.speed = 0;
+  // 视觉上的刹车减速效果
+  clearInterval(speedInterval);
+  speedInterval = setInterval(() => {
+    if (telemetry.speed > 0) telemetry.speed -= 10;
+    if (telemetry.speed <= 0) { 
+      telemetry.speed = 0; 
+      clearInterval(speedInterval); 
+    }
+  }, 50);
+  
   try {
     await apiRequest("/control/stop", "POST");
   } catch (e) {}
 };
 
 const handleEmergencyStop = async () => {
-  telemetry.speed = 0;
-  printLog("EMERGENCY STOP 已下发！强行制动！", "info");
+  telemetry.speed = 0; 
+  clearInterval(speedInterval);
+  printLog("EMERGENCY STOP (硬件急停) 已下发！", "error");
   try {
     await apiRequest("/control/stop", "POST");
   } catch (e) {}
 };
 
-const handlePTZ = async (action) => {
+// ==========================================
+// 📸 舵机绝对角度与校准控制 (在 PiControl.vue 中)
+// ==========================================
+const ptzPan = ref(90);  // 对应后端 yaw
+const ptzTilt = ref(90); // 对应后端 pitch
+
+const calibratePTZ = async () => {
+  ptzPan.value = 90;
+  ptzTilt.value = 90;
+  await updatePTZ();
+  ElMessage.success("云台舵机已强制归中！");
+  printLog("云台校准: [X:90°, Y:90°]", "info");
+};
+
+// 发送绝对角度给后端
+const updatePTZ = async () => {
   try {
-    await apiRequest("/control/ptz", "POST", { action });
-  } catch (e) {}
+    // 调用现有的 angle 接口，并将参数名改为后端能识别的 yaw 和 pitch
+    await apiRequest('/control/gimbal/angle', 'POST', { 
+      yaw: ptzPan.value, 
+      pitch: ptzTilt.value 
+    });
+  } catch(e) {}
 };
 
 const handleConfigChange = async () => {
@@ -592,66 +683,7 @@ const handleConfigChange = async () => {
   } catch (e) {}
 };
 
-// ==========================================
-// 🧠 人机协同抓拍核心逻辑
-// ==========================================
-const handleCapture = async () => {
-  const video = videoStreamRef.value;
-  if (!video) {
-    ElMessage.error("视频流未接入，无法抓拍！");
-    return;
-  }
-  try {
-    const canvas = document.createElement("canvas");
-    canvas.width = video.clientWidth;
-    canvas.height = video.clientHeight;
-    const ctx = canvas.getContext("2d");
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // 🧠 模拟提取模型返回的边框数据
-    const mockCrackCount = Math.floor(Math.random() * 3) + 1; // 随机检测出1~3条裂纹
-    detectedCracks.value = [];
-
-    for (let i = 0; i < mockCrackCount; i++) {
-      const conf = (75 + Math.random() * 23).toFixed(1); // 模拟置信度
-      detectedCracks.value.push({
-        id: i + 1,
-        confidence: conf,
-        severity: 3, // 默认给3星中度
-        type: "细纹",
-      });
-
-      // 动态在画布上叠加红色的 AI 定位框和编号标签
-      const x = 50 + Math.random() * (canvas.width - 150);
-      const y = 50 + Math.random() * (canvas.height - 150);
-
-      ctx.strokeStyle = "#ef4444"; // 红色警戒框
-      ctx.lineWidth = 3;
-      ctx.strokeRect(x, y, 100, 80);
-
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(x, y - 20, 110, 20);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 12px Arial";
-      ctx.fillText(`#${i + 1} PROB:${conf}%`, x + 5, y - 5);
-    }
-
-    // 画全局水印
-    ctx.fillStyle = "#00e5ff";
-    ctx.font = "16px monospace";
-    ctx.fillText(`SYS.TIMESTAMP: ${new Date().toLocaleString()}`, 15, 30);
-    ctx.fillText(`DISTANCE_RADAR: ${telemetry.distance}cm`, 15, 55);
-
-    // 为了防止撑爆内存，将压缩率调至 0.4
-    captureImage.value = canvas.toDataURL("image/jpeg", 0.4);
-    showCaptureDialog.value = true;
-
-    await apiRequest("/inspection/snapshot", "POST");
-  } catch (err) {
-    ElMessage.warning("抓拍指令已发送，但在无流状态下仅作界面模拟。");
-  }
-};
 
 const saveCapture = () => {
   if (!currentTaskId.value) {
@@ -762,34 +794,80 @@ const watchAiStatus = async (val) => {
   } catch (e) {}
 };
 
+// 新增：记录上一次自动弹窗的图片ID，防止同一张图片无限疯狂弹窗
+const lastAutoImgId = ref(null);
+
 const fetchCarState = async () => {
   if (!isConnected.value) return;
   try {
     const state = await apiRequest("/inspection/state", "GET");
-    if (state.detection_count > 0) {
-      aiConfidence.value = 80 + Math.floor(Math.random() * 15);
+    
+    // 1. 更新 HUD 面板上的置信度显示 (绿色雷达框里的数字)
+    if (state.detection_count > 0 && state.detections) {
+      aiConfidence.value = Math.round(state.detections[0].confidence * 100);
     } else {
       aiConfidence.value = 0;
+    }
+
+    // 2. 🚨 核心逻辑：监听后端的“自动落盘抓拍”信号！
+    if (state.latest_capture_info) {
+      const autoInfo = state.latest_capture_info;
+      
+      // 检查这张照片的 ID 是否是新的 (前端没处理过的)
+      if (autoInfo.image_id !== lastAutoImgId.value) {
+        lastAutoImgId.value = autoInfo.image_id; // 记录下来，标记为已处理
+        
+        // 读取后端保存好的图片真实路径
+        // (假设后端的静态资源映射在根目录，拼接 BASE_URL)
+        const pathStr = autoInfo.image_url.replace(/\\/g, '/');
+        const matchIdx = pathStr.indexOf('data/output');
+        if (matchIdx !== -1) {
+          captureImage.value = BASE_URL + '/' + pathStr.substring(matchIdx);
+        } else {
+          captureImage.value = BASE_URL + '/' + pathStr;
+        } 
+        
+        // 读取后端传来的这条裂缝的具体数据
+        detectedCracks.value = autoInfo.cracks.map((c, i) => ({
+          id: i + 1,
+          confidence: (c.confidence * 100).toFixed(1),
+          severity: 3, // 默认给3星中度，等待操作员人工复核
+          type: c.class_name || "表面细纹"
+        }));
+        
+        // 🚀 强制全自动弹出人工定级框！
+        showCaptureDialog.value = true;
+        ElMessage.warning("🚨 AI 自动捕获到外墙病害，已为您自动留证，请立即定级！");
+      }
     }
   } catch (e) {
     packetLoss.value = 100;
   }
 };
 
-onUnmounted(() => {
-  clearInterval(telemetryTimer);
-  handleRelease();
+onUnmounted(() => { 
+  clearInterval(telemetryTimer); 
+  handleRelease(); 
+  
+  // 🔴 卸载键盘监听
+  window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('keyup', handleKeyUp);
 });
 </script>
 
 <style scoped>
+/* 修改 PiControl.vue 里的 .cyber-dashboard 样式 */
 .cyber-dashboard {
   background-color: #030712;
   background-image: radial-gradient(circle at 50% 20%, #0b1528 0%, #030712 80%);
   color: #f8fafc;
-  min-height: calc(100vh - 40px);
+  
+  /* 关键修改在这里 👇 */
+  height: calc(100vh - 60px); /* 减去顶部导航栏高度 */
+  overflow-y: auto;          /* 允许内容区溢出滚动 */
+  
   padding: 16px;
-  font-family: "SF Pro Display", system-ui, monospace;
+  font-family: 'SF Pro Display', system-ui, monospace;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -846,7 +924,7 @@ onUnmounted(() => {
 .live-video-stream {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   opacity: 0.85;
 }
 
@@ -1024,20 +1102,24 @@ onUnmounted(() => {
   font-family: monospace;
 }
 
-.hardware-control-grid {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1.2fr 2fr;
-  gap: 14px;
-  height: 155px;
+.hardware-control-grid { 
+  display: grid; 
+  grid-template-columns: 1.2fr 1fr 1.2fr 2fr; 
+  gap: 14px; 
+  /* 💡 核心 1：将 min-height 换成强硬的 height 锁死总高度 */
+  height: 165px; 
+  flex-shrink: 0; 
 }
-.panel-box {
-  background: rgba(15, 23, 42, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+.panel-box { 
+  background: rgba(15, 23, 42, 0.4); 
+  border: 1px solid rgba(255, 255, 255, 0.04); 
+  border-radius: 8px; 
+  padding: 10px; 
+  display: flex; 
+  flex-direction: column; 
+  justify-content: space-between; 
+  /* 💡 核心 2：严禁内部元素把盒子撑破 */
+  overflow: hidden; 
 }
 .panel-title {
   font-size: 11px;
@@ -1131,17 +1213,21 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 
-.terminal-panel {
-  flex: 1;
+.terminal-panel { 
+  flex: 1; 
+  /* 💡 核心 3：日志面板也限制溢出 */
+  overflow: hidden; 
 }
-.terminal-body {
-  flex: 1;
-  overflow-y: auto;
-  background: #010307;
-  border-radius: 4px;
-  padding: 6px;
-  font-family: monospace;
-  font-size: 11px;
+.terminal-body { 
+  flex: 1; 
+  overflow-y: auto; 
+  background: #010307; 
+  border-radius: 4px; 
+  padding: 6px; 
+  font-family: monospace; 
+  font-size: 11px; 
+  /* 💡 核心 4：终极魔法 min-height: 0，强制让 Flex 子元素触发内滚动，而不是撑开父元素 */
+  min-height: 0; 
 }
 .terminal-row {
   display: flex;

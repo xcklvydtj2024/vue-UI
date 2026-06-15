@@ -29,9 +29,7 @@
           text-color="#94a3b8"
           active-text-color="#00e5ff"
         >
-          <el-menu-item index="/admin-dashboard/overview">
-            <i class="el-icon-data-board"></i> 系统总览
-          </el-menu-item>
+          
           <el-menu-item index="/admin-dashboard/task-manager">
             <i class="el-icon-document"></i> 任务管理
           </el-menu-item>
@@ -152,5 +150,24 @@ export default {
   background-color: #050810; /* 与 PiControl 背景无缝融合 */
   padding: 0; /* 取消原有的 20px 内边距，让小车控制台填满屏幕 */
   overflow: hidden;
+}
+/* ==========================================
+   🖨️ 全局打印专属 CSS (隐藏侧边栏和顶部导航)
+   ========================================== */
+@media print {
+  /* 隐藏顶部头和左侧菜单 */
+  .header, .aside {
+    display: none !important;
+  }
+  
+  /* 解除主内容区的布局限制，让报告填满整张 A4 纸 */
+  .dashboard-container, .main-wrapper, .main-content {
+    height: auto !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
 }
 </style>

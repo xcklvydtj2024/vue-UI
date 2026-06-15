@@ -27,8 +27,9 @@ const routes = [
     path: '/admin-dashboard',
     name: 'AdminDashboard',
     component: AdminDashboard,
+    redirect: '/admin-dashboard/task-manager',
     children: [
-      { path: 'overview', name: 'Dashboard', component: Dashboard },
+      
       { path: 'task-manager', name: 'TaskManager', component: TaskManager },
       { path: 'user-manager', name: 'UserManager', component: UserManager },
       { path: 'data-analysis', name: 'DataAnalysis', component: DataAnalysis },

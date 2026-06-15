@@ -19,23 +19,32 @@
           @click="exportExcel"
           >导出Excel</el-button
         >
+        <el-button
+          type="primary"
+          plain
+          style="border-color: #00e5ff; color: #00e5ff; margin-left: 10px;"
+          @click="printLogPage"
+          >打印日志</el-button
+        >
       </el-form-item>
     </el-form>
 
-    <el-table :data="filteredLogs" border height="600" class="cyber-table">
-      <el-table-column prop="time" label="操作时间" width="220" />
-      <el-table-column prop="task_id" label="关联任务" width="150" />
-      <el-table-column prop="event" label="操作内容" />
-      <el-table-column prop="operator" label="操作员" width="150">
-        <template #default="scope">
-          <el-tag
-            color="#0B1320"
-            style="border-color: #00e5ff; color: #00e5ff"
-            >{{ scope.row.operator }}</el-tag
-          >
-        </template>
-      </el-table-column>
-    </el-table>
+    <div id="print-area">
+      <el-table :data="filteredLogs" border height="600" class="cyber-table">
+        <el-table-column prop="time" label="操作时间" width="220" />
+        <el-table-column prop="task_id" label="关联任务" width="150" />
+        <el-table-column prop="event" label="操作内容" />
+        <el-table-column prop="operator" label="操作员" width="150">
+          <template #default="scope">
+            <el-tag
+              color="#0B1320"
+              style="border-color: #00e5ff; color: #00e5ff"
+              >{{ scope.row.operator }}</el-tag
+            >
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
   </div>
 </template>
 
@@ -61,25 +70,47 @@ export default {
   methods: {
     async fetchLogs() {
       try {
-        // 1. 拿取你原本数据库里的日志
         const res = await fetch("http://localhost:3000/logs").catch(() => ({
           json: () => [],
         }));
         let serverLogs = await res.json();
 
-        // 🚩 2. 联动核心：拿取我们在 PiControl 控制小车产生的全局实时指令！
         const localLogs = JSON.parse(
           localStorage.getItem("global_system_logs") || "[]",
         );
 
         this.logs = [...localLogs, ...serverLogs].sort(
           (a, b) => new Date(b.time) - new Date(a.time),
-        ); // 最新在上面
+        );
       } catch (e) {}
     },
+    // 🌟 纯前端导出 CSV (Excel 可直接打开)
     exportExcel() {
-      /* 原有导出逻辑 */
+      if (!this.filteredLogs.length) {
+        this.$message.warning("暂无数据可导出");
+        return;
+      }
+      
+      // 组装 CSV 表头与内容
+      let csvContent = "\uFEFF操作时间,关联任务,操作内容,操作员\r\n";
+      this.filteredLogs.forEach(row => {
+        csvContent += `"${row.time || ''}","${row.task_id || ''}","${row.event || ''}","${row.operator || ''}"\r\n`;
+      });
+
+      // 创建 Blob 和下载链接
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `巡检系统操作日志_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     },
+    // 🌟 纯前端调用浏览器打印
+    printLogPage() {
+      window.print();
+    }
   },
 };
 </script>
@@ -130,5 +161,24 @@ export default {
 }
 :deep(.cyber-input .el-input__inner) {
   color: #00e5ff;
+}
+
+/* 🌟 优化打印样式：打印时隐藏表单操作栏，仅保留表格展示 */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-area, #print-area * {
+    visibility: visible;
+  }
+  #print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .cyber-card, .filter-bar {
+    display: none !important;
+  }
 }
 </style>
